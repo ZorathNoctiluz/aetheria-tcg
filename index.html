@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aetheria TCG Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">PROTÓTIPO PESSOAL • PLAYTEST</div>
+      <h1>Aetheria TCG</h1>
+    </div>
+    <div class="topbar-actions">
+      <span id="versionBadge" class="badge">carregando...</span>
+      <button id="loginBtn" class="btn ghost">Entrar</button>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero-section">
+      <div class="section-copy">
+        <p class="kicker">Escolha um Herói</p>
+        <h2>Decks iniciais</h2>
+        <p>Selecione um Herói para consultar seu Receptáculo, habilidade, Skill inicial e as 30 cartas do starter oficial.</p>
+      </div>
+      <div id="heroesGrid" class="heroes-grid">
+        <div class="loading-card">Carregando Heróis...</div>
+      </div>
+    </section>
+
+    <section id="deckSection" class="deck-section hidden">
+      <div class="deck-heading">
+        <div>
+          <p id="deckReceptacle" class="kicker"></p>
+          <h2 id="deckTitle"></h2>
+          <p id="deckSummary"></p>
+        </div>
+        <div class="deck-stats">
+          <div><strong id="deckCount">0</strong><span>cartas</span></div>
+          <div><strong id="unitCount">0</strong><span>unidades</span></div>
+          <div><strong id="avgCost">0</strong><span>custo médio</span></div>
+        </div>
+      </div>
+
+      <div class="hero-info-grid">
+        <article class="info-card">
+          <span>Herói</span>
+          <h3 id="heroInfoName"></h3>
+          <p id="heroStats"></p>
+          <strong id="heroAbilityName"></strong>
+          <p id="heroAbilityText"></p>
+        </article>
+        <article class="info-card">
+          <span>Receptáculo</span>
+          <h3 id="receptacleInfoName"></h3>
+          <strong id="passiveName"></strong>
+          <p id="passiveText"></p>
+        </article>
+        <article class="info-card">
+          <span>Skill inicial</span>
+          <h3 id="skillName"></h3>
+          <p id="skillText"></p>
+        </article>
+      </div>
+
+      <div class="filters">
+        <button class="filter active" data-filter="all">Todas</button>
+        <button class="filter" data-filter="unit">Unidades</button>
+        <button class="filter" data-filter="action">Ações</button>
+        <button class="filter" data-filter="equipment">Equipamentos</button>
+        <button class="filter" data-filter="trap">Armadilhas</button>
+        <button class="filter" data-filter="terrain">Terrenos</button>
+      </div>
+
+      <div id="cardsGrid" class="cards-grid"></div>
+    </section>
+  </main>
+
+  <dialog id="authDialog" class="dialog">
+    <form id="authForm" method="dialog" class="auth-form">
+      <button type="button" id="closeDialog" class="dialog-close">×</button>
+      <p class="kicker">Conta de playtest</p>
+      <h2>Entrar no Aetheria TCG</h2>
+      <label>E-mail<input id="emailInput" type="email" required /></label>
+      <label>Senha<input id="passwordInput" type="password" minlength="6" required /></label>
+      <label>Nick <small>(só para cadastro)</small><input id="nicknameInput" type="text" maxlength="30" /></label>
+      <div class="auth-actions">
+        <button type="submit" data-action="login" class="btn primary">Entrar</button>
+        <button type="submit" data-action="signup" class="btn ghost">Criar conta</button>
+      </div>
+      <p id="authMessage" class="auth-message"></p>
+    </form>
+  </dialog>
+
+  <template id="heroTemplate">
+    <button class="hero-card">
+      <div class="hero-art"><span class="hero-icon"></span></div>
+      <div class="hero-card-body">
+        <span class="hero-class"></span>
+        <h3 class="hero-name"></h3>
+        <p class="hero-role"></p>
+        <div class="hero-mini-stats"></div>
+      </div>
+    </button>
+  </template>
+
+  <template id="cardTemplate">
+    <article class="game-card">
+      <div class="game-card-art"><span class="card-code"></span><span class="card-cost"></span></div>
+      <div class="game-card-body">
+        <div class="card-topline"><span class="card-type"></span><span class="card-qty"></span></div>
+        <h3 class="card-name"></h3>
+        <div class="card-stats"></div>
+        <p class="card-text"></p>
+      </div>
+    </article>
+  </template>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
