@@ -6,7 +6,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 const $ = (s) => document.querySelector(s)
 const $$ = (s) => [...document.querySelectorAll(s)]
-const state = { heroes: [], receptacles: [], skills: [], decks: [], deckCards: [], cardVersions: [], cards: [], selectedHero: null, filter:'all' }
+const state = { heroes: [], receptacles: [], skills: [], decks: [], deckCards: [], cardVersions: [], cards: [], selectedHero: null, filter:'all', session:null, activeRoom:null }
 const icons = { paladin:'🛡️', warrior:'⚔️', mage:'🔮', wanderer:'🏹' }
 const typeNames = { unit:'Unidade', action:'Ação', equipment:'Equipamento', trap:'Armadilha', terrain:'Terreno' }
 
@@ -50,6 +50,7 @@ function selectHero(heroId){
   $$('.hero-card').forEach(x=>x.classList.toggle('selected',x.dataset.hero===heroId))
   state.filter='all'; $$('.filter').forEach(x=>x.classList.toggle('active',x.dataset.filter==='all'))
   renderDeck()
+  updateLobbyControls()
   $('#deckSection').classList.remove('hidden')
   $('#deckSection').scrollIntoView({behavior:'smooth',block:'start'})
 }
@@ -131,8 +132,87 @@ $('#authForm').addEventListener('submit',async(e)=>{
   if(action==='login'){setTimeout(()=>dialog.close(),500)}
   updateAuthButton()
 })
-async function updateAuthButton(){const {data:{session}}=await supabase.auth.getSession();$('#loginBtn').textContent=session?'Sair':'Entrar'}
-supabase.auth.onAuthStateChange(()=>updateAuthButton())
+async function updateAuthButton(){
+  const {data:{session}}=await supabase.auth.getSession()
+  state.session=session
+  $('#loginBtn').textContent=session?'Sair':'Entrar'
+  updateLobbyControls()
+}
+
+function updateLobbyControls(){
+  const ready=Boolean(state.session && state.selectedHero)
+  $('#createRoomBtn').disabled=!ready
+  $('#joinRoomBtn').disabled=!ready
+  if(!state.session){
+    $('#lobbyStatusTitle').textContent='Faça login para criar ou entrar em partidas.'
+  } else if(!state.selectedHero){
+    $('#lobbyStatusTitle').textContent='Selecione um Herói para continuar.'
+  } else if(!state.activeRoom){
+    $('#lobbyStatusTitle').textContent=`Pronto: ${state.selectedHero.name} selecionado.`
+  }
+}
+
+function setLobbyStatus(message, roomCode=''){
+  $('#lobbyStatusTitle').textContent=message
+  $('#roomCodeDisplay').textContent=roomCode
+  $('#copyRoomBtn').classList.toggle('hidden',!roomCode)
+}
+
+async function invokeLobby(payload){
+  if(!state.session) throw new Error('Faça login primeiro.')
+  const {data,error}=await supabase.functions.invoke('lobby',{body:payload})
+  if(error){
+    let message=error.message
+    try{
+      const ctx=await error.context?.json?.()
+      if(ctx?.error) message=ctx.error
+    }catch{}
+    throw new Error(message)
+  }
+  if(data?.error) throw new Error(data.error)
+  return data
+}
+
+$('#createRoomBtn').addEventListener('click',async()=>{
+  if(!state.selectedHero) return
+  $('#createRoomBtn').disabled=true
+  setLobbyStatus('Criando sala...')
+  try{
+    const data=await invokeLobby({action:'create_room',hero_slug:state.selectedHero.slug})
+    state.activeRoom=data
+    setLobbyStatus(`Sala criada com ${data.hero}. Envie o código ao outro jogador.`,data.room_code)
+  }catch(err){
+    setLobbyStatus(`Erro: ${err.message}`)
+  }finally{ updateLobbyControls() }
+})
+
+$('#joinRoomBtn').addEventListener('click',async()=>{
+  if(!state.selectedHero) return
+  const room=$('#roomCodeInput').value.trim().toUpperCase()
+  if(!room){ setLobbyStatus('Digite o código da sala.'); return }
+  $('#joinRoomBtn').disabled=true
+  setLobbyStatus('Entrando na sala...')
+  try{
+    const data=await invokeLobby({action:'join_room',hero_slug:state.selectedHero.slug,room_code:room})
+    state.activeRoom=data
+    setLobbyStatus(`Você entrou como Player 2 com ${data.hero}. Sala pronta para iniciar.`,data.room_code)
+  }catch(err){
+    setLobbyStatus(`Erro: ${err.message}`)
+  }finally{ updateLobbyControls() }
+})
+
+$('#roomCodeInput').addEventListener('input',(e)=>{
+  e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,'')
+})
+$('#copyRoomBtn').addEventListener('click',async()=>{
+  const code=$('#roomCodeDisplay').textContent
+  if(!code) return
+  await navigator.clipboard.writeText(code)
+  $('#copyRoomBtn').textContent='Copiado!'
+  setTimeout(()=>$('#copyRoomBtn').textContent='Copiar código',1200)
+})
+
+supabase.auth.onAuthStateChange((_event,session)=>{ state.session=session; updateAuthButton() })
 
 loadCatalog().catch(err=>{$('#heroesGrid').innerHTML=`<div class="loading-card">Erro ao carregar o catálogo: ${err.message}</div>`})
 updateAuthButton()

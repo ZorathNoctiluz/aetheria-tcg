@@ -33,6 +33,37 @@
       </div>
     </section>
 
+
+    <section id="lobbySection" class="lobby-section">
+      <div class="section-copy">
+        <p class="kicker">Lobby online</p>
+        <h2>Crie ou entre em uma sala</h2>
+        <p>Faça login, selecione um Herói acima e crie uma sala. O segundo jogador entra usando o código <strong>AET-...</strong>.</p>
+      </div>
+      <div class="lobby-grid">
+        <article class="lobby-card">
+          <span class="lobby-label">Hospedar</span>
+          <h3>Criar partida</h3>
+          <p>Usa o Herói selecionado e seu starter oficial de 30 cartas.</p>
+          <button id="createRoomBtn" class="btn primary" disabled>Criar sala</button>
+        </article>
+        <article class="lobby-card">
+          <span class="lobby-label">Convidado</span>
+          <h3>Entrar em uma sala</h3>
+          <p>Digite o código enviado pelo host.</p>
+          <div class="join-row">
+            <input id="roomCodeInput" class="room-input" placeholder="AET-XXXXXX" maxlength="10" />
+            <button id="joinRoomBtn" class="btn primary" disabled>Entrar</button>
+          </div>
+        </article>
+      </div>
+      <div id="lobbyStatus" class="lobby-status">
+        <span id="lobbyStatusTitle">Selecione um Herói e faça login.</span>
+        <strong id="roomCodeDisplay"></strong>
+        <button id="copyRoomBtn" class="btn ghost hidden" type="button">Copiar código</button>
+      </div>
+    </section>
+
     <section id="deckSection" class="deck-section hidden">
       <div class="deck-heading">
         <div>
