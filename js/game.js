@@ -46,6 +46,14 @@ async function render(){
   const myTurn=match.active_player_id===session.user.id
   $('#turnOwner').textContent=myTurn?'Seu turno':'Turno do adversário'
   const btn=$('#advancePhaseBtn'); btn.textContent=phaseActionLabel(match); btn.disabled=!myTurn||match.status!=='active'; btn.classList.toggle('hidden',match.status!=='active')
+  $('#surrenderBtn').classList.toggle('hidden',match.status!=='active')
+  $('#leaveGameBtn').classList.toggle('hidden',match.status!=='finished')
+  if(match.status==='finished'){
+    const won=match.winner_id===session.user.id
+    $('#turnOwner').textContent=won?'Vitória':'Derrota'
+    $('#phaseName').textContent='Partida encerrada'
+    $('#phaseHelp').textContent=match.public_state?.finish_reason==='surrender'?(won?'O adversário se rendeu.':'Você se rendeu.'):'A partida foi encerrada.'
+  }
   $('#phaseHelp').textContent=myTurn?phaseHelp(match.phase):'Aguardando o adversário concluir a fase.'
 
   const {data:zone}=await supabase.from('match_private_zones').select('*').eq('match_id',match.id).eq('user_id',session.user.id).single()
@@ -79,6 +87,7 @@ function eventText(e){
   if(e.event_type==='resonance')return `Ressonância • capacidade de Ether ${e.payload?.ether_capacity}`
   if(e.event_type==='turn_ended')return `Turno encerrado • próximo turno ${e.payload?.next_turn_number}`
   if(e.event_type==='fatigue')return `Esgotamento causou ${e.payload?.damage} de dano.`
+  if(e.event_type==='surrender')return e.actor_user_id===session?.user?.id?'Você se rendeu.':'O adversário se rendeu.'
   return `${e.event_type}: ${phaseNames[e.payload?.to]||e.payload?.to||''}`
 }
 
@@ -86,6 +95,17 @@ $('#advancePhaseBtn').addEventListener('click',async()=>{
   if(!match)return
   const btn=$('#advancePhaseBtn');btn.disabled=true
   try{await invokeFunction('game-action',{action:'advance_phase',room_code:match.room_code});await refresh()}catch(e){$('#gameMessage').textContent=e.message}finally{btn.disabled=false}
+})
+
+
+$('#surrenderBtn').addEventListener('click',async()=>{
+  if(!match||match.status!=='active')return
+  if(!confirm('Render-se desta partida? Isso encerra a partida imediatamente e concede a vitória ao adversário.'))return
+  const btn=$('#surrenderBtn');btn.disabled=true
+  try{
+    await invokeFunction('room-control',{action:'surrender',room_code:match.room_code})
+    await refresh()
+  }catch(e){$('#gameMessage').textContent=e.message}finally{btn.disabled=false}
 })
 
 function startPolling(){if(poller)clearInterval(poller);refresh();poller=setInterval(refresh,1800)}

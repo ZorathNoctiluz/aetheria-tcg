@@ -5,7 +5,7 @@ let catalog=null,selectedHero=null,session=null,activeRoom=null,poller=null
 const $=s=>document.querySelector(s)
 
 function status(msg,code=''){ $('#lobbyStatusTitle').textContent=msg; $('#roomCodeDisplay').textContent=code; $('#copyRoomBtn').classList.toggle('hidden',!code) }
-function updateButtons(){ const ready=Boolean(session&&selectedHero&&!activeRoom); $('#createRoomBtn').disabled=!ready; $('#joinRoomBtn').disabled=!ready }
+function updateButtons(){ const ready=Boolean(session&&selectedHero&&!activeRoom); $('#createRoomBtn').disabled=!ready; $('#joinRoomBtn').disabled=!ready; $('#leaveRoomBtn').classList.toggle('hidden',!activeRoom) }
 
 function renderHeroes(){
   const grid=$('#heroesGrid'); grid.innerHTML=''
@@ -32,13 +32,16 @@ async function checkRoom(){
   const {data:players}=await supabase.from('match_players').select('*').eq('match_id',match.id).order('seat')
   const own=players?.find(p=>p.user_id===session.user.id); if(own) activeRoom.seat=own.seat
   $('#startMatchBtn').classList.add('hidden')
+  $('#leaveRoomBtn').classList.toggle('hidden',!['waiting','ready'].includes(match.status))
   if(match.status==='waiting'){ status('Sala criada. Aguardando o segundo jogador...',match.room_code); return }
   if(match.status==='ready'){
     if(own?.seat===1){ status('Segundo jogador entrou. Sala pronta.',match.room_code); $('#startMatchBtn').classList.remove('hidden') }
     else status('Sala pronta. Aguardando o host iniciar.',match.room_code)
     return
   }
-  if(match.status==='active'){ stopPolling(); location.href=`./game.html?room=${encodeURIComponent(match.room_code)}` }
+  if(match.status==='active'){ stopPolling(); location.href=`./game.html?room=${encodeURIComponent(match.room_code)}`; return }
+  if(match.status==='cancelled'){ stopPolling(); activeRoom=null; $('#startMatchBtn').classList.add('hidden'); $('#leaveRoomBtn').classList.add('hidden'); status('A sala foi cancelada.'); updateButtons(); return }
+  if(match.status==='finished'){ stopPolling(); activeRoom=null; $('#startMatchBtn').classList.add('hidden'); $('#leaveRoomBtn').classList.add('hidden'); status('Essa partida já foi encerrada.'); updateButtons() }
 }
 function startPolling(){ stopPolling(); checkRoom(); poller=setInterval(checkRoom,1800); updateButtons() }
 function stopPolling(){ if(poller){clearInterval(poller);poller=null} }
@@ -57,6 +60,18 @@ $('#startMatchBtn').addEventListener('click',async()=>{
   status('Iniciando partida...',activeRoom.room_code)
   try{ await invokeFunction('start-match',{room_code:activeRoom.room_code}); await checkRoom() }catch(e){status(`Erro: ${e.message}`,activeRoom.room_code)}
 })
+
+$('#leaveRoomBtn').addEventListener('click',async()=>{
+  if(!activeRoom)return
+  const msg=activeRoom.seat===1?'Sair da sala? Como host, isso cancelará a sala para todos.':'Sair desta sala? Você poderá entrar em outra depois.'
+  if(!confirm(msg))return
+  const btn=$('#leaveRoomBtn');btn.disabled=true
+  try{
+    await invokeFunction('room-control',{action:'leave_room',room_code:activeRoom.room_code})
+    stopPolling();activeRoom=null;$('#startMatchBtn').classList.add('hidden');btn.classList.add('hidden');status('Você saiu da sala.');updateButtons()
+  }catch(e){status(`Erro: ${e.message}`,activeRoom.room_code)}finally{btn.disabled=false}
+})
+
 $('#copyRoomBtn').addEventListener('click',async()=>{const c=$('#roomCodeDisplay').textContent;if(c){await navigator.clipboard.writeText(c);$('#copyRoomBtn').textContent='Copiado!';setTimeout(()=>$('#copyRoomBtn').textContent='Copiar',1000)}})
 $('#roomCodeInput').addEventListener('input',e=>e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g,''))
 
