@@ -182,7 +182,14 @@ function combatStatus(row){
   return 'PRONTO'
 }
 function fieldRows(userId){return boardRows.filter(r=>r.owner_user_id===userId&&(r.zone==='unit'||r.zone==='hero'))}
-function guardRows(userId){return fieldRows(userId).filter(r=>Boolean(r.state?.has_guardiao))}
+function boardHasGuardiao(row){
+  if(!row)return false
+  if(row.state?.has_guardiao)return true
+  if(row.hero_id)return false
+  const {version}=cardFromVersion(row.card_version_id)
+  return keywordValue(version?.keywords,'guardiao')>0
+}
+function guardRows(userId){return fieldRows(userId).filter(boardHasGuardiao)}
 function validCombatTarget(row,defenderId){const guards=guardRows(defenderId);return guards.length===0||guards.some(g=>g.id===row.id)}
 
 function renderHand(hand,own,myTurn){
