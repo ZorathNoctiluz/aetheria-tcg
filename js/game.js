@@ -11,6 +11,46 @@ function cardFromVersion(id){
   const card=catalog.cards.find(c=>c.id===version?.card_id)
   return {version,card}
 }
+function keywordValue(keywords,key){
+  if(!Array.isArray(keywords))return 0
+  for(const item of keywords){
+    if(typeof item==='string'&&item===key)return 1
+    if(item&&typeof item==='object'&&item.key===key)return Number(item.value??1)
+  }
+  return 0
+}
+function keywordBadgesFromVersion(version){
+  if(!version)return ''
+  const badges=[]
+  if(keywordValue(version.keywords,'guardiao'))badges.push('<span class="keyword-badge guardiao">🛡 Guardião</span>')
+  if(keywordValue(version.keywords,'impeto'))badges.push('<span class="keyword-badge impeto">⚡ Ímpeto</span>')
+  const regen=keywordValue(version.keywords,'regeneracao')
+  if(regen)badges.push(`<span class="keyword-badge regeneracao">♻ Regeneração ${regen}</span>`)
+  return badges.join('')
+}
+function keywordBadgesFromBoard(row,version,hero){
+  const state=row?.state||{}
+  const badges=[]
+  const guardiao=Boolean(state.has_guardiao)||keywordValue(version?.keywords,'guardiao')>0
+  const impeto=Boolean(state.has_impeto)||keywordValue(version?.keywords,'impeto')>0||hero?.ability_spec?.keywords?.includes?.('impeto')
+  const regen=Number(state.regeneration??keywordValue(version?.keywords,'regeneracao')??0)
+  if(guardiao)badges.push('<span class="keyword-badge guardiao">🛡 Guardião</span>')
+  if(impeto)badges.push('<span class="keyword-badge impeto">⚡ Ímpeto</span>')
+  if(regen)badges.push(`<span class="keyword-badge regeneracao">♻ Regeneração ${regen}</span>`)
+  if(regen&&state.regen_eligible)badges.push('<span class="keyword-badge ready">Pronta para regenerar</span>')
+  return badges.join('')
+}
+function entryEffectSummary(effects=[]){
+  const parts=[]
+  for(const effect of effects||[]){
+    if(effect.effect==='grant_shield'){
+      const bonus=Number(effect.passive_bonus||0)
+      parts.push(`+${Number(effect.gained||0)} Escudo${bonus?` (Voto +${bonus})`:''}`)
+    }
+    if(effect.effect==='heal_receptacle')parts.push(`+${Number(effect.healed||0)} Vida`)
+  }
+  return parts.filter(x=>!x.startsWith('+0 ')).join(' • ')
+}
 function phaseActionLabel(m){
   if(m.phase==='awakening') return 'Resolver Despertar'
   if(m.phase==='resonance') return 'Resolver Ressonância'
@@ -57,12 +97,12 @@ async function render(){
   $('#turnNumber').textContent=match.turn_number
   $('#phaseName').textContent=phaseNames[match.phase]||match.phase
   $('#selfHeroName').textContent=ownHero?.name||'—'
-  $('#selfLife').textContent=own.life
+  $('#selfLife').textContent=`${own.life}/${own.max_life??25}`
   $('#selfShield').textContent=own.shield
   $('#selfEther').textContent=`${own.ether_available}/${own.ether_capacity}`
   $('#selfReserve').textContent=own.reserve
   $('#oppHeroName').textContent=oppHero?.name||'—'
-  $('#oppLife').textContent=opp?.life??25
+  $('#oppLife').textContent=`${opp?.life??25}/${opp?.max_life??25}`
   $('#oppShield').textContent=opp?.shield??0
   $('#oppHand').textContent=opp?.hand_count??0
 
@@ -97,9 +137,9 @@ async function render(){
 
 function phaseHelp(p){
   if(p==='awakening')return 'Resolva a compra de 1 carta. Se o deck estiver vazio, Esgotamento será aplicado.'
-  if(p==='resonance')return 'Sua capacidade de Ether aumenta em +1 e o Ether normal é recarregado.'
-  if(p==='preparation')return 'Fase principal: você já pode jogar Unidades e invocar seu Herói. Efeitos individuais ainda entram na próxima camada da engine.'
-  if(p==='confrontation')return 'Fase de ataques. O combate será habilitado na próxima implementação.'
+  if(p==='resonance')return 'Ether é recarregado e Unidades elegíveis com Regeneração recuperam Vida.'
+  if(p==='preparation')return 'Fase principal: jogue Unidades e invoque seu Herói. Guardião, Ímpeto e efeitos simples de entrada já são reconhecidos pela engine.'
+  if(p==='confrontation')return 'Fase de ataques. As keywords já estão preparadas; o combate será habilitado na próxima implementação.'
   if(p==='twilight')return 'Efeitos finais são resolvidos e o turno passa ao adversário.'
   return ''
 }
@@ -129,7 +169,7 @@ function renderHand(hand,own,myTurn){
     const selected=selectedPlacement?.type==='unit'&&selectedPlacement.cardVersionId===version.id
     const a=document.createElement('article')
     a.className=`hand-card${playable?' playable':''}${selected?' selected':''}`
-    a.innerHTML=`<div class="hand-card-art"><strong>${card.code}</strong><strong>◈ ${version.ether_cost}</strong></div><div class="hand-card-body"><span class="hand-meta">${typeNames[card.card_type]}</span><h4>${escapeHtml(card.name)}</h4><div class="hand-stats">${card.card_type==='unit'?`ATQ ${version.attack} • VIDA ${version.health}`:''}</div><p>${escapeHtml(version.rules_text)}</p><div class="hand-card-actions">${card.card_type==='unit'?`<button class="btn ${selected?'primary':'ghost'} play-unit-btn" data-version="${version.id}" ${playable?'':'disabled'}>${selected?'Selecionada':'Jogar'}</button>`:'<span class="coming-soon">Uso em breve</span>'}</div></div>`
+    a.innerHTML=`<div class="hand-card-art"><strong>${card.code}</strong><strong>◈ ${version.ether_cost}</strong></div><div class="hand-card-body"><span class="hand-meta">${typeNames[card.card_type]}</span><h4>${escapeHtml(card.name)}</h4><div class="hand-stats">${card.card_type==='unit'?`ATQ ${version.attack} • VIDA ${version.health}`:''}</div><div class="keyword-row">${keywordBadgesFromVersion(version)}</div><p>${escapeHtml(version.rules_text)}</p><div class="hand-card-actions">${card.card_type==='unit'?`<button class="btn ${selected?'primary':'ghost'} play-unit-btn" data-version="${version.id}" ${playable?'':'disabled'}>${selected?'Selecionada':'Jogar'}</button>`:'<span class="coming-soon">Uso em breve</span>'}</div></div>`
     grid.appendChild(a)
   }
   grid.querySelectorAll('.play-unit-btn').forEach(btn=>btn.addEventListener('click',()=>{
@@ -173,10 +213,12 @@ function renderBoardSide(container,userId,isOwn,myTurn){
       slot.disabled=true;slot.classList.add('occupied')
       if(row.hero_id){
         const hero=catalog.heroes.find(h=>h.id===row.hero_id)
-        slot.innerHTML=`<span class="piece-type">HERÓI</span><strong>${escapeHtml(hero?.name||'Herói')}</strong><small>ATQ ${row.current_attack} • VIDA ${row.current_health}</small>`
+        const badges=keywordBadgesFromBoard(row,null,hero)
+        slot.innerHTML=`<span class="piece-type">HERÓI</span><strong>${escapeHtml(hero?.name||'Herói')}</strong><small>ATQ ${row.current_attack} • VIDA ${row.current_health}/${row.max_health??row.current_health}</small><div class="piece-keywords">${badges}</div>`
       }else{
-        const {card}=cardFromVersion(row.card_version_id)
-        slot.innerHTML=`<span class="piece-type">${escapeHtml(card?.code||'UNIDADE')}</span><strong>${escapeHtml(card?.name||'Unidade')}</strong><small>ATQ ${row.current_attack} • VIDA ${row.current_health}</small>`
+        const {card,version}=cardFromVersion(row.card_version_id)
+        const badges=keywordBadgesFromBoard(row,version,null)
+        slot.innerHTML=`<span class="piece-type">${escapeHtml(card?.code||'UNIDADE')}</span><strong>${escapeHtml(card?.name||'Unidade')}</strong><small>ATQ ${row.current_attack} • VIDA ${row.current_health}/${row.max_health??row.current_health}</small><div class="piece-keywords">${badges}</div>`
       }
     }else{
       slot.innerHTML=`<span class="slot-number">${i+1}</span><small>Slot vazio</small>`
@@ -198,9 +240,12 @@ async function placeSelected(slotIndex){
       ?{action:'play_unit',room_code:match.room_code,slot_index:slotIndex,card_version_id:selectedPlacement.cardVersionId}
       :{action:'summon_hero',room_code:match.room_code,slot_index:slotIndex}
     const result=await invokeFunction('play-piece',payload)
-    $('#gameMessage').textContent=selectedPlacement.type==='unit'
-      ?`${result.card?.name||'Unidade'} entrou no slot ${slotIndex+1}.`
-      :`${result.hero||'Herói'} foi invocado no slot ${slotIndex+1}.`
+    if(selectedPlacement.type==='unit'){
+      const effects=entryEffectSummary(result.entry_effects)
+      $('#gameMessage').textContent=`${result.card?.name||'Unidade'} entrou no slot ${slotIndex+1}.${effects?` ${effects}.`:''}`
+    }else{
+      $('#gameMessage').textContent=`${result.hero||'Herói'} foi invocado no slot ${slotIndex+1}.`
+    }
     selectedPlacement=null
     await refresh()
   }catch(e){
@@ -224,17 +269,24 @@ function renderPlacementHint(myTurn){
 }
 
 async function renderEvents(){
-  const {data}=await supabase.from('match_events').select('*').eq('match_id',match.id).order('sequence_no',{ascending:false}).limit(10)
+  const {data}=await supabase.from('match_events').select('*').eq('match_id',match.id).order('sequence_no',{ascending:false}).limit(12)
   const list=$('#eventLog');list.innerHTML=''
   for(const e of data||[]){const li=document.createElement('li');li.textContent=eventText(e);list.appendChild(li)}
 }
 function eventText(e){
   if(e.event_type==='draw')return `Compra realizada • mão ${e.payload?.hand_count} • deck ${e.payload?.deck_count}`
-  if(e.event_type==='resonance')return `Ressonância • capacidade de Ether ${e.payload?.ether_capacity}`
+  if(e.event_type==='resonance'){
+    const regs=Array.isArray(e.payload?.regeneration)?e.payload.regeneration:[]
+    const healed=regs.reduce((sum,r)=>sum+Number(r.healed||0),0)
+    return `Ressonância • capacidade de Ether ${e.payload?.ether_capacity}${regs.length?` • Regeneração em ${regs.length} Unidade(s), ${healed} Vida recuperada`:''}`
+  }
   if(e.event_type==='turn_ended')return `Turno encerrado • próximo turno ${e.payload?.next_turn_number}`
   if(e.event_type==='fatigue')return `Esgotamento causou ${e.payload?.damage} de dano.`
   if(e.event_type==='surrender')return e.actor_user_id===session?.user?.id?'Você se rendeu.':'O adversário se rendeu.'
-  if(e.event_type==='unit_played')return `${e.payload?.card_name||'Unidade'} entrou no slot ${Number(e.payload?.slot_index??0)+1} • custo ${e.payload?.cost}`
+  if(e.event_type==='unit_played'){
+    const effects=entryEffectSummary(e.payload?.entry_effects)
+    return `${e.payload?.card_name||'Unidade'} entrou no slot ${Number(e.payload?.slot_index??0)+1} • custo ${e.payload?.cost}${effects?` • ${effects}`:''}`
+  }
   if(e.event_type==='hero_summoned')return `${e.payload?.hero_name||'Herói'} foi invocado no slot ${Number(e.payload?.slot_index??0)+1} • custo ${e.payload?.cost}`
   return `${e.event_type}: ${phaseNames[e.payload?.to]||e.payload?.to||''}`
 }
