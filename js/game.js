@@ -140,7 +140,7 @@ async function render(){
 function phaseHelp(p){
   if(p==='awakening')return 'Resolva a compra de 1 carta. Se o deck estiver vazio, Esgotamento será aplicado.'
   if(p==='resonance')return 'Ether é recarregado e Unidades elegíveis com Regeneração recuperam Vida.'
-  if(p==='preparation')return 'Fase principal: jogue Unidades e invoque seu Herói. Guardião, Ímpeto e efeitos simples de entrada já são reconhecidos pela engine.'
+  if(p==='preparation')return 'Fase principal: jogue Unidades, Ações e Equipamentos e invoque seu Herói. Cartas suportadas destacam alvos válidos automaticamente.'
   if(p==='confrontation')return 'Escolha uma peça apta para atacar e depois um alvo. Guardião restringe os alvos; Ímpeto permite atacar no turno em que a peça entrou.'
   if(p==='twilight')return 'Efeitos finais são resolvidos e o turno passa ao adversário.'
   return ''
@@ -155,6 +155,54 @@ function canPayUnit(version,own){
 function canPayHero(own){
   const cost=5+(Number(own.hero_summons??0)*3)
   return Number(own.ether_available??0)+Number(own.reserve??0)>=cost
+}
+
+function preparationSpec(version,card){
+  if(card?.card_type==='action')return version?.effect_spec?.play||null
+  if(card?.card_type==='equipment')return version?.effect_spec?.equip||null
+  return null
+}
+function preparationTargetAvailable(scope,own){
+  if(scope==='none'||!scope)return true
+  if(scope==='own_piece')return fieldRows(own.user_id).length>0
+  if(scope==='enemy_piece'){
+    const opp=players.find(p=>p.user_id!==own.user_id)
+    return fieldRows(opp?.user_id).length>0
+  }
+  return false
+}
+function equipmentRowsFor(bearerId){return boardRows.filter(r=>r.zone==='equipment'&&r.attached_to===bearerId)}
+function equipmentStackHtml(bearerId){
+  const eq=equipmentRowsFor(bearerId)
+  if(!eq.length)return ''
+  return `<div class="equipment-stack">${eq.map(r=>{const {card}=cardFromVersion(r.card_version_id);return `<span class="equipment-badge">⚔ ${escapeHtml(card?.name||'Equipamento')}</span>`}).join('')}</div>`
+}
+function preparationEffectSummary(effect={}){
+  if(!effect||typeof effect!=='object')return ''
+  const p=[]
+  if(effect.kind==='damage_unit')p.push(`${Number(effect.damage||0)} dano${effect.destroyed?' • alvo destruído':''}`)
+  if(effect.kind==='grant_shield')p.push(`+${Number(effect.gained||0)} Escudo`)
+  if(effect.kind==='temp_attack')p.push(`+${Number(effect.amount||0)} ATQ até o Crepúsculo`)
+  if(effect.kind==='heal_unit'){
+    p.push(`+${Number(effect.healed||0)} Vida`)
+    if(Number(effect.attack_bonus||0))p.push(`+${effect.attack_bonus} ATQ até o Crepúsculo`)
+  }
+  if(effect.kind==='reserve_draw'){
+    p.push(`+${Number(effect.reserve_gained||0)} Reserva`)
+    if(effect.draw?.drawn)p.push('comprou 1')
+    if(effect.draw?.fatigue)p.push(`Esgotamento ${effect.draw?.fatigue_damage||0}`)
+  }
+  if(effect.kind==='breach_arrow')p.push(`${Number(effect.damage||0)} dano ao Receptáculo${effect.ignored_shield?' ignorando Escudo':''}`)
+  if(effect.kind==='equipment'){
+    if(Number(effect.attack_bonus||0))p.push(`+${effect.attack_bonus} ATQ`)
+    if(Number(effect.max_health_bonus||0))p.push(`+${effect.max_health_bonus} Vida máxima`)
+    if(Number(effect.healed||0))p.push(`+${effect.healed} Vida`)
+    if(Number(effect.shield_removed||0))p.push(`removeu ${effect.shield_removed} Escudo inimigo`)
+    if(effect.draw?.drawn)p.push('comprou 1')
+    if(effect.draw?.fatigue)p.push(`Esgotamento ${effect.draw?.fatigue_damage||0}`)
+  }
+  if(Number(effect.receptacle_bonus_damage||0))p.push(`+${effect.receptacle_bonus_damage} no Receptáculo`)
+  return p.join(' • ')
 }
 function heroOnBoard(own){return boardRows.some(r=>r.owner_user_id===own.user_id&&r.hero_id===own.hero_id&&(r.zone==='hero'||r.zone==='unit'))}
 function openSlots(userId){
@@ -197,17 +245,43 @@ function renderHand(hand,own,myTurn){
   const preparation=myTurn&&match.status==='active'&&match.phase==='preparation'
   for(const id of hand){
     const {version,card}=cardFromVersion(id);if(!version||!card)continue
-    const playable=preparation&&card.card_type==='unit'&&canPayUnit(version,own)&&openSlots(own.user_id).length>0
-    const selected=selectedPlacement?.type==='unit'&&selectedPlacement.cardVersionId===version.id
+    const spec=preparationSpec(version,card)
+    const supported=Boolean(spec?.supported)
+    const scope=spec?.target||'none'
+    const unitPlayable=preparation&&card.card_type==='unit'&&canPayUnit(version,own)&&openSlots(own.user_id).length>0
+    const prepPlayable=preparation&&['action','equipment'].includes(card.card_type)&&supported&&canPayUnit(version,own)&&preparationTargetAvailable(scope,own)
+    const playable=unitPlayable||prepPlayable
+    const selected=selectedPlacement?.cardVersionId===version.id
     const a=document.createElement('article')
-    a.className=`hand-card${playable?' playable':''}${selected?' selected':''}`
-    a.innerHTML=`<div class="hand-card-art"><strong>${card.code}</strong><strong>◈ ${version.ether_cost}</strong></div><div class="hand-card-body"><span class="hand-meta">${typeNames[card.card_type]}</span><h4>${escapeHtml(card.name)}</h4><div class="hand-stats">${card.card_type==='unit'?`ATQ ${version.attack} • VIDA ${version.health}`:''}</div><div class="keyword-row">${keywordBadgesFromVersion(version)}</div><p>${escapeHtml(version.rules_text)}</p><div class="hand-card-actions">${card.card_type==='unit'?`<button class="btn ${selected?'primary':'ghost'} play-unit-btn" data-version="${version.id}" ${playable?'':'disabled'}>${selected?'Selecionada':'Jogar'}</button>`:'<span class="coming-soon">Uso em breve</span>'}</div></div>`
+    a.className=`hand-card${playable?' playable':''}${selected?' selected':''}${(['action','equipment'].includes(card.card_type)&&!supported)?' unsupported':''}`
+    let actionHtml=''
+    if(card.card_type==='unit'){
+      actionHtml=`<button class="btn ${selected?'primary':'ghost'} play-unit-btn" data-version="${version.id}" ${unitPlayable?'':'disabled'}>${selected?'Selecionada':'Jogar'}</button>`
+    }else if(['action','equipment'].includes(card.card_type)){
+      if(supported){
+        const label=card.card_type==='equipment'?'Equipar':(scope==='none'?'Usar':'Selecionar alvo')
+        actionHtml=`<button class="btn ${selected?'primary':'ghost'} prep-card-btn" data-version="${version.id}" ${prepPlayable?'':'disabled'}>${selected?'Selecionada':label}</button>`
+      }else actionHtml='<span class="coming-soon">Efeito ainda não suportado</span>'
+    }else actionHtml='<span class="coming-soon">Uso em breve</span>'
+    a.innerHTML=`<div class="hand-card-art"><strong>${card.code}</strong><strong>◈ ${version.ether_cost}</strong></div><div class="hand-card-body"><span class="hand-meta">${typeNames[card.card_type]}</span><h4>${escapeHtml(card.name)}</h4><div class="hand-stats">${card.card_type==='unit'?`ATQ ${version.attack} • VIDA ${version.health}`:''}</div><div class="keyword-row">${keywordBadgesFromVersion(version)}</div><p>${escapeHtml(version.rules_text)}</p><div class="hand-card-actions">${actionHtml}</div></div>`
     grid.appendChild(a)
   }
   grid.querySelectorAll('.play-unit-btn').forEach(btn=>btn.addEventListener('click',()=>{
     const id=btn.dataset.version
     const {card}=cardFromVersion(id)
     selectedPlacement={type:'unit',cardVersionId:id,name:card?.name||'Unidade'}
+    render()
+  }))
+  grid.querySelectorAll('.prep-card-btn').forEach(btn=>btn.addEventListener('click',async()=>{
+    const id=btn.dataset.version
+    const {version,card}=cardFromVersion(id)
+    const spec=preparationSpec(version,card)
+    const scope=spec?.target||'none'
+    if(scope==='none'){
+      await playPreparationCard(id,null)
+      return
+    }
+    selectedPlacement={type:card.card_type,cardVersionId:id,name:card?.name||'Carta',targetScope:scope}
     render()
   }))
 }
@@ -251,13 +325,24 @@ function renderBoardSide(container,userId,isOwn,myTurn){
       if(row.hero_id){
         const hero=catalog.heroes.find(h=>h.id===row.hero_id)
         const badges=keywordBadgesFromBoard(row,null,hero)
-        slot.innerHTML=`<span class="piece-type">HERÓI</span><strong>${escapeHtml(hero?.name||'Herói')}</strong><small>ATQ ${row.current_attack} • VIDA ${row.current_health}/${row.max_health??row.current_health}</small><div class="piece-keywords">${badges}</div>${status}`
+        const equipment=equipmentStackHtml(row.id)
+        slot.innerHTML=`<span class="piece-type">HERÓI</span><strong>${escapeHtml(hero?.name||'Herói')}</strong><small>ATQ ${row.current_attack} • VIDA ${row.current_health}/${row.max_health??row.current_health}</small><div class="piece-keywords">${badges}</div>${equipment}${status}`
       }else{
         const {card,version}=cardFromVersion(row.card_version_id)
         const badges=keywordBadgesFromBoard(row,version,null)
-        slot.innerHTML=`<span class="piece-type">${escapeHtml(card?.code||'UNIDADE')}</span><strong>${escapeHtml(card?.name||'Unidade')}</strong><small>ATQ ${row.current_attack} • VIDA ${row.current_health}/${row.max_health??row.current_health}</small><div class="piece-keywords">${badges}</div>${status}`
+        const equipment=equipmentStackHtml(row.id)
+        slot.innerHTML=`<span class="piece-type">${escapeHtml(card?.code||'UNIDADE')}</span><strong>${escapeHtml(card?.name||'Unidade')}</strong><small>ATQ ${row.current_attack} • VIDA ${row.current_health}/${row.max_health??row.current_health}</small><div class="piece-keywords">${badges}</div>${equipment}${status}`
       }
       slot.disabled=true
+      if(myTurn&&match.phase==='preparation'&&match.status==='active'&&!actionBusy&&selectedPlacement&&['action','equipment'].includes(selectedPlacement.type)){
+        const scope=selectedPlacement.targetScope
+        const valid=(scope==='own_piece'&&isOwn)||(scope==='enemy_piece'&&!isOwn)
+        if(valid){
+          slot.disabled=false
+          slot.classList.add('prep-targetable')
+          slot.addEventListener('click',()=>playPreparationCard(selectedPlacement.cardVersionId,row.id))
+        }else slot.classList.add('blocked-target')
+      }
       if(myTurn&&match.phase==='confrontation'&&match.status==='active'&&!actionBusy){
         if(isOwn){
           if(selectedAttacker?.id===row.id){
@@ -273,7 +358,7 @@ function renderBoardSide(container,userId,isOwn,myTurn){
       }
     }else{
       slot.innerHTML=`<span class="slot-number">${i+1}</span><small>Slot vazio</small>`
-      const canChoose=isOwn&&myTurn&&match.phase==='preparation'&&selectedPlacement&&!actionBusy
+      const canChoose=isOwn&&myTurn&&match.phase==='preparation'&&selectedPlacement&&['unit','hero'].includes(selectedPlacement.type)&&!actionBusy
       slot.disabled=!canChoose
       if(canChoose)slot.classList.add('selectable')
       if(canChoose)slot.addEventListener('click',()=>placeSelected(i))
@@ -319,6 +404,22 @@ async function attackReceptacle(){
   finally{actionBusy=false}
 }
 
+async function playPreparationCard(cardVersionId,targetId=null){
+  if(actionBusy)return
+  actionBusy=true
+  $('#gameMessage').textContent='Resolvendo carta...'
+  try{
+    const {data,error}=await supabase.rpc('resolve_preparation_card',{p_room_code:match.room_code,p_card_version_id:cardVersionId,p_target_id:targetId})
+    if(error)throw error
+    const summary=preparationEffectSummary(data?.effect)
+    const discount=Number(data?.printed_cost||0)!==Number(data?.paid_cost||0)?` • custo reduzido para ${data.paid_cost}`:''
+    $('#gameMessage').textContent=`${data?.card_name||'Carta'} resolvida${discount}${summary?` • ${summary}`:''}.`
+    selectedPlacement=null
+    await refresh()
+  }catch(e){$('#gameMessage').textContent=e.message}
+  finally{actionBusy=false}
+}
+
 async function placeSelected(slotIndex){
   if(!selectedPlacement||actionBusy)return
   actionBusy=true
@@ -349,9 +450,12 @@ function renderPlacementHint(myTurn){
   if(!myTurn){el.textContent='Aguarde seu turno.';return}
   if(match.phase==='preparation'){
     if(selectedPlacement){
-      el.innerHTML=`Selecionado: <strong>${escapeHtml(selectedPlacement.name)}</strong>. Escolha um dos slots destacados no seu campo. <button id="cancelPlacement" class="link-button">Cancelar</button>`
+      let instruction='Escolha um dos slots destacados no seu campo.'
+      if(selectedPlacement.targetScope==='own_piece')instruction='Escolha uma peça sua destacada.'
+      if(selectedPlacement.targetScope==='enemy_piece')instruction='Escolha uma peça inimiga destacada.'
+      el.innerHTML=`Selecionado: <strong>${escapeHtml(selectedPlacement.name)}</strong>. ${instruction} <button id="cancelPlacement" class="link-button">Cancelar</button>`
       $('#cancelPlacement')?.addEventListener('click',()=>{selectedPlacement=null;render()})
-    }else el.textContent='Escolha uma Unidade da mão ou selecione seu Herói; depois escolha um slot vazio.'
+    }else el.textContent='Jogue uma Unidade, use uma Ação, equipe uma peça ou invoque seu Herói.'
     return
   }
   if(match.phase==='confrontation'){
@@ -385,6 +489,14 @@ function eventText(e){
     return `${e.payload?.card_name||'Unidade'} entrou no slot ${Number(e.payload?.slot_index??0)+1} • custo ${e.payload?.cost}${effects?` • ${effects}`:''}`
   }
   if(e.event_type==='hero_summoned')return `${e.payload?.hero_name||'Herói'} foi invocado no slot ${Number(e.payload?.slot_index??0)+1} • custo ${e.payload?.cost}`
+  if(e.event_type==='action_played'){
+    const s=preparationEffectSummary(e.payload?.effect)
+    return `${e.payload?.card_name||'Ação'} usada • custo ${e.payload?.paid_cost??e.payload?.printed_cost}${s?` • ${s}`:''}`
+  }
+  if(e.event_type==='equipment_played'){
+    const s=preparationEffectSummary(e.payload?.effect)
+    return `${e.payload?.card_name||'Equipamento'} equipado • custo ${e.payload?.paid_cost??e.payload?.printed_cost}${s?` • ${s}`:''}`
+  }
   if(e.event_type==='combat')return `${e.payload?.attacker_name||'Atacante'} → ${e.payload?.target_name||'Alvo'} • ${e.payload?.attacker_damage||0} x ${e.payload?.defender_damage||0}${Number(e.payload?.warrior_bonus||0)?' • Instinto +1':''}${e.payload?.target_destroyed?' • alvo destruído':''}${e.payload?.attacker_destroyed?' • atacante destruído':''}`
   if(e.event_type==='receptacle_attacked')return `${e.payload?.attacker_name||'Atacante'} atingiu o Receptáculo • ${e.payload?.life_damage||0} Vida${Number(e.payload?.shield_absorbed||0)?` • ${e.payload.shield_absorbed} Escudo absorvido`:''}`
   if(e.event_type==='receptacle_destroyed')return `${e.payload?.attacker_name||'Atacante'} destruiu o Receptáculo e encerrou a partida.`
